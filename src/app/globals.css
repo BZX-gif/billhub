@@ -1,0 +1,418 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f7f3ea;
+  --color-surface: #ffffff;
+  --color-surface-soft: #fcfaf5;
+  --color-ink: #241f17;
+  --color-ink-soft: #5c5548;
+  --color-ink-faint: #8b8374;
+  --color-line: #e9e2d4;
+  --color-line-strong: #d9d0bd;
+  --color-brand: #1b6b4f;
+  --color-brand-strong: #12503a;
+  --color-brand-soft: #e7f1eb;
+  --color-brand-tint: #f2f8f4;
+  --color-amber: #a9670f;
+  --color-amber-soft: #fbf1df;
+  --color-danger: #a93b2e;
+  --color-danger-soft: #fbedea;
+
+  --font-sans: var(--font-inter), var(--font-devanagari), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-fraunces), var(--font-devanagari), Georgia, "Times New Roman", serif;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+  --radius-3xl: 1.375rem;
+
+  --shadow-card: 0 1px 2px rgba(36, 31, 23, 0.04), 0 14px 32px -22px rgba(36, 31, 23, 0.22);
+  --shadow-lift: 0 2px 6px rgba(36, 31, 23, 0.06), 0 24px 48px -24px rgba(36, 31, 23, 0.28);
+  --shadow-mic: 0 18px 34px -14px rgba(18, 80, 58, 0.55), 0 4px 10px rgba(18, 80, 58, 0.18);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+@layer components {
+  .vb-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-card);
+  }
+
+  .vb-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .vb-input {
+    width: 100%;
+    border-radius: 0.8rem;
+    border: 1px solid var(--color-line);
+    background-color: var(--color-surface);
+    padding: 0.65rem 0.9rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: var(--color-ink);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .vb-input::placeholder {
+    color: var(--color-ink-faint);
+  }
+
+  .vb-input:hover {
+    border-color: var(--color-line-strong);
+  }
+
+  .vb-input:focus {
+    outline: none;
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 12%, transparent);
+  }
+
+  .vb-input[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+
+  .vb-caps {
+    font-size: 0.68rem;
+    font-weight: 650;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .vb-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  .vb-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .vb-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+  }
+}
+
+/* ----------------------------- motion ----------------------------- */
+
+@keyframes vb-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vb-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes vb-pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+@keyframes vb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes vb-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-fade-up {
+  animation: vb-fade-up 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.animate-pop {
+  animation: vb-pop 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.animate-toast {
+  animation: vb-toast-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.pulse-ring {
+  animation: vb-pulse-ring 2.2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+.sound-bar {
+  animation: vb-bar 900ms ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ----------------------------- receipt ----------------------------- */
+
+.receipt-sheet {
+  --receipt-ink: #16130e;
+  background: #ffffff;
+  color: var(--receipt-ink);
+  width: 80mm;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 4.5mm 4mm;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.receipt-sheet[data-format="58mm"] {
+  width: 58mm;
+  padding: 3.5mm 3mm;
+  font-size: 9px;
+}
+
+.receipt-sheet[data-format="a4"] {
+  width: 210mm;
+  min-height: 277mm;
+  padding: 14mm;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.receipt-sheet h1,
+.receipt-sheet h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.receipt-meta {
+  font-size: 0.92em;
+  color: #4b463c;
+}
+
+.receipt-rule {
+  border-top: 1px dashed #b9b2a4;
+  margin: 2.2mm 0;
+}
+
+.receipt-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.receipt-table th,
+.receipt-table td {
+  padding: 1.4mm 0;
+  vertical-align: top;
+}
+
+.receipt-total {
+  font-family: var(--font-display);
+  font-size: 1.5em;
+  letter-spacing: -0.01em;
+}
+
+.receipt-a4-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.receipt-a4-table th {
+  text-align: left;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b6457;
+  border-bottom: 1px solid #dcd6c9;
+  padding: 0 0 2.5mm;
+}
+
+.receipt-a4-table td {
+  padding: 3mm 0;
+  border-bottom: 1px solid #eeebe3;
+  vertical-align: top;
+}
+
+@media screen and (max-width: 720px) {
+  .receipt-sheet[data-format="a4"] {
+    width: 100%;
+    min-height: auto;
+    padding: 7mm 5mm;
+    font-size: 11px;
+  }
+}
+
+/* ----------------------------- print ----------------------------- */
+
+/*
+ * Only the receipt portal is printed. Every other top-level node in <body>
+ * (the app itself, the mobile nav, dev overlays) is removed from the print
+ * layout, so no fixed-position chrome can leak onto thermal paper.
+ */
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+  }
+
+  body > *:not(.receipt-modal) {
+    display: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .receipt-modal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    transform: none !important;
+  }
+
+  .receipt-modal > div:not(.receipt-panel) {
+    display: none !important;
+  }
+
+  .receipt-panel {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .receipt-scroll {
+    display: block !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    width: auto !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-area {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .receipt-sheet,
+  .receipt-sheet[data-format] {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
