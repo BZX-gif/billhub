@@ -1,6 +1,6 @@
 import type { DraftItem, Product, Unit } from "./types";
 import type { ParsedItem } from "./parser";
-import { matchProduct } from "./matching";
+import { MIN_CANDIDATE_SCORE, matchProduct } from "./matching";
 import { convertQuantity, formatQuantity, isUnit } from "./units";
 import { createId } from "./ids";
 import { tidyName } from "./text";
@@ -57,11 +57,32 @@ export function createDraftItemFromParsed(
   source: DraftItem["source"] = "voice",
 ): DraftItem {
   const match = matchProduct(parsed.query, products);
+  // A line without a product word can never be billed, whatever the parser
+  // produced (defence in depth: quantity/unit alone is never a product).
+  if (!parsed.query.trim()) {
+    return emptyItem({
+      source,
+      rawText: parsed.raw,
+      name: "",
+      quantity: parsed.quantity,
+      unit: parsed.unit && isUnit(parsed.unit) ? parsed.unit : "piece",
+      unitPrice: 0,
+      matchStatus: "unmatched",
+      needsReview: true,
+      reviewReason: "No product was spoken. Choose a product from your catalogue.",
+      alternatives: [],
+    });
+  }
   const notes = parsed.notes.join(" · ");
+  // Only real candidates are offered for review — a weak similarity is never
+  // shown as a suggestion.
+  const alternatives = match.alternatives
+    .filter((alternative) => alternative.score >= MIN_CANDIDATE_SCORE)
+    .map(({ productId, score }) => ({ productId, score }));
   const base: Partial<DraftItem> = {
     source,
     rawText: parsed.raw,
-    alternatives: match.alternatives.map(({ productId, score }) => ({ productId, score })),
+    alternatives,
     notice: notes || undefined,
   };
 
@@ -123,6 +144,8 @@ export function createDraftItemFromParsed(
       match.status === "ambiguous"
         ? "More than one product matches. Choose the right one."
         : "This product is not in your catalogue. Choose a product or add it.",
+    // Carry the reviewed candidates so the existing picker can offer them.
+    alternatives,
   });
 }
 

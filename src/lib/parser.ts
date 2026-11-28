@@ -1,8 +1,9 @@
 import { parseNumberToken, parseQuantityPrefix } from "./numbers";
 import { normalizeText, tokenize } from "./text";
 import { clampQuantity, convertQuantity } from "./units";
-import { FILLER_TOKENS, PHRASE_NUMBER_FIXES, unitForWord } from "./vocabulary";
-import type { Unit } from "./types";
+import { PHRASE_NUMBER_FIXES, unitForWord } from "./vocabulary";
+import { isFillerWord, isNonWordNoise } from "./noise";
+import type { Product, Unit } from "./types";
 
 export interface ParsedItem {
   /** The spoken fragment this item came from. */
@@ -21,6 +22,8 @@ export interface ParseResult {
   items: ParsedItem[];
   /** Fragments that had no recognisable product. */
   ignored: string[];
+  /** Fragments that were only filler / non-speech noise (dropped silently). */
+  noise: string[];
 }
 
 const RAW_SPLIT_REGEX =
@@ -107,13 +110,81 @@ function mergeGroups(groups: QuantityGroup[], notes: string[]): { quantity: numb
 }
 
 /**
+ * Decide whether a normalised token is conversational noise *in this
+ * fragment*, given the tokens that surround it.
+ *
+ * - `"no"` / `"na"` right after a number is the piece unit ("2 no sabun").
+ * - Any other unit word ("2 kg", "500 ml") is never noise.
+ * - Everything else that is a known filler or a non-word sound is dropped.
+ */
+function isNoiseToken(token: string, index: number, tokens: string[]): boolean {
+  // Numbers are never noise: "do" is the Hindi word for two, "paune do kilo"
+  // must stay 1.75 kg, not collapse to "paune kilo".
+  if (parseNumberToken(token) !== null || parseQuantityPrefix(token) !== null) {
+    return false;
+  }
+  if (unitForWord(token)) {
+    const previous = index > 0 ? tokens[index - 1] : undefined;
+    // Unit words such as "no"/"na"/"g" only mean a unit when a quantity is
+    // spoken right before them; standing alone they are fillers ("no").
+    const isAmbiguousUnit = token === "no" || token === "na";
+    if (!isAmbiguousUnit) return false;
+    if (!previous || parseNumberToken(previous) === null) {
+      return isFillerWord(token);
+    }
+    return false;
+  }
+  return isFillerWord(token) || isNonWordNoise(token);
+}
+
+/**
+ * Keep every word that the shop's catalogue actually recognises, so a product
+ * whose name overlaps a filler word is never lost ("No Sugar" sweetener,
+ * "Haan Wala Atta"). Returns the indexes that must be preserved.
+ */
+function catalogueProtectedIndexes(tokens: string[], products?: Product[]): Set<number> {
+  const protectedIndexes = new Set<number>();
+  if (!products || products.length === 0) return protectedIndexes;
+
+  for (const product of products) {
+    const targets = [product.name, ...product.aliases]
+      .map((value) => tokenize(normalizeText(value)))
+      .filter((target) => target.length > 0);
+    for (const target of targets) {
+      if (target.length === 1) {
+        const index = tokens.indexOf(target[0]!);
+        if (index >= 0) protectedIndexes.add(index);
+        continue;
+      }
+      for (let i = 0; i <= tokens.length - target.length; i++) {
+        let hit = true;
+        for (let j = 0; j < target.length; j++) {
+          if (tokens[i + j] !== target[j]) {
+            hit = false;
+            break;
+          }
+        }
+        if (hit) {
+          for (let j = 0; j < target.length; j++) protectedIndexes.add(i + j);
+        }
+      }
+    }
+  }
+  return protectedIndexes;
+}
+
+/**
  * Turn a spoken/typed utterance into structured line items.
  * Multiple products separated by "aur" / "and" / commas are supported.
+ *
+ * When `products` is supplied, filler filtering becomes catalogue aware: a
+ * word is only dropped when it is *not* part of a real product name.
  */
-export function parseUtterance(input: string): ParseResult {
+export function parseUtterance(input: string, products?: Product[]): ParseResult {
   const items: ParsedItem[] = [];
   const ignored: string[] = [];
-  if (!input || !input.trim()) return { items, ignored };
+  const noise: string[] = [];
+  if (!input || !input.trim()) return { items, ignored, noise };
 
   let prepared = input;
   for (const [pattern, replacement] of PHRASE_NUMBER_FIXES) {
@@ -130,12 +201,21 @@ export function parseUtterance(input: string): ParseResult {
     const allTokens = tokenize(normalized);
     if (allTokens.length === 0) continue;
 
-    const tokens = allTokens.filter((token) => !FILLER_TOKENS.has(token));
-    if (tokens.length === 0) {
-      ignored.push(raw);
+    const preserved = catalogueProtectedIndexes(allTokens, products);
+    const keptIndexes: number[] = [];
+    allTokens.forEach((token, index) => {
+      if (preserved.has(index) || !isNoiseToken(token, index, allTokens)) {
+        keptIndexes.push(index);
+      }
+    });
+
+    // Nothing but filler / noise: drop it silently instead of creating a line.
+    if (keptIndexes.length === 0) {
+      noise.push(raw);
       continue;
     }
 
+    const tokens = keptIndexes.map((index) => allTokens[index]!);
     const notes: string[] = [];
     const groups = extractQuantities(tokens);
     const consumed = new Set<number>();
@@ -143,6 +223,7 @@ export function parseUtterance(input: string): ParseResult {
 
     const nameTokens = tokens.filter((_, index) => !consumed.has(index));
     const query = nameTokens.join(" ").trim();
+    const explicitQuantity = groups.length > 0;
 
     // A single stray character ("a", "x") is never a real product; ignore it
     // rather than creating a line the shopkeeper has to clean up.
@@ -151,10 +232,19 @@ export function parseUtterance(input: string): ParseResult {
       continue;
     }
 
+    // A lone non-word sound ("huu", "hmmm", "zzzz") is noise, not a product.
+    // Catalogue words are always kept, so this can never drop a real product.
+    // A measured hum ("3 kg huu") is dropped here too, but reported as ignored
+    // because only the quantity survived — the shopkeeper still sees why.
+    const isProtected = keptIndexes.some((index) => preserved.has(index));
+    if (!isProtected && nameTokens.every((token) => isNonWordNoise(token))) {
+      (explicitQuantity ? ignored : noise).push(raw);
+      continue;
+    }
+
     const merged = groups.length
       ? mergeGroups(groups, notes)
       : { quantity: 1, unit: null as Unit | null };
-    const explicitQuantity = groups.length > 0;
     const explicitUnit = groups.some((group) => group.unit !== null);
 
     if (!explicitQuantity) notes.push("Quantity not spoken — set to 1");
@@ -191,5 +281,5 @@ export function parseUtterance(input: string): ParseResult {
     }
   }
 
-  return { items: deduped, ignored };
+  return { items: deduped, ignored, noise };
 }

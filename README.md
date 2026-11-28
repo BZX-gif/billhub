@@ -72,7 +72,12 @@ npm run verify     # all of the above, in order
    mentions. Interjections alone (“uh hmm”) are ignored rather than becoming phantom products.
 3. **Matching** — `src/lib/matching.ts` scores the query against product names and aliases with normalisation
    (Devanagari, common Hinglish spellings, plurals). A match must clear a decisive margin; close calls become
-   “Confirm” lines and unknown words become “No match” lines.
+   “Confirm” lines and unknown words become “No match” lines. A literal name or registered alias is always accepted
+   first; a fuzzy single word needs strong similarity *and* a clear winner, so a stray word can never be guessed into
+   a product. Filler words and non-word sounds (“huu”, “hmm”, “haan”, “achha”, “ji”, “no”, “okay”, plus their
+   Devanagari forms — see `src/lib/noise.ts`) are dropped unless they are part of a catalogue name (a shop product
+   called “No Sugar Sweetener” still matches). A measurement plus a hum (“3 kg huu”) never creates a line, and an
+   utterance with nothing recognisable leaves the draft untouched and says “No recognizable grocery product found.”
 4. **Resolution** — unresolved lines must be pointed at a catalogue product or given a one-off custom price before the
    bill can be reviewed. Prices always come from the catalogue or explicit input, never guessed.
 5. **Billing** — `src/lib/billing.ts` validates every line, computes line amounts, subtotal, percentage/amount

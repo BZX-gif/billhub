@@ -120,7 +120,9 @@ describe("speech parser", () => {
   it("ignores an utterance that is only an interjection", () => {
     const result = parseUtterance("uh hmm");
     expect(result.items).toHaveLength(0);
-    expect(result.ignored).toHaveLength(1);
+    // Pure filler is reported as noise (not as an unknown product).
+    expect(result.ignored).toHaveLength(0);
+    expect(result.noise).toEqual(["uh hmm"]);
   });
 
   it("drops greeting words without losing the product", () => {
@@ -133,6 +135,6 @@ describe("speech parser", () => {
   it("ignores a single stray character", () => {
     const result = parseUtterance("x");
     expect(result.items).toHaveLength(0);
-    expect(result.ignored).toEqual(["x"]);
+    expect(result.noise).toEqual(["x"]);
   });
 });
