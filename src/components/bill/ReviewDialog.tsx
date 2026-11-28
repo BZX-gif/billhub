@@ -5,6 +5,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApp } from "@/store/AppProvider";
 import { formatMoney, formatQuantity } from "@/lib/units";
+import { formatDate, formatTime } from "@/lib/format";
+import { billTimestamp, printableGstin } from "@/lib/gst";
 import { computeLineAmount } from "@/lib/billing";
 import { UNIT_LABEL } from "@/lib/types";
 
@@ -19,6 +21,8 @@ export function ReviewDialog({
 }) {
   const { draft, draftTotals, settings } = useApp();
   const symbol = settings.currencySymbol;
+  const invoiceAt = billTimestamp(draft.billDate);
+  const gstin = printableGstin(settings.gstin);
 
   return (
     <Modal
@@ -45,6 +49,21 @@ export function ReviewDialog({
         </div>
       }
     >
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-line bg-surface-soft px-3.5 py-2.5 text-[12px] text-ink-soft">
+        <span>
+          <span className="text-ink-faint">Invoice date:</span>{" "}
+          <span className="font-semibold text-ink">
+            {formatDate(invoiceAt)} · {formatTime(invoiceAt)}
+          </span>
+        </span>
+        {gstin ? (
+          <span>
+            <span className="text-ink-faint">GSTIN:</span>{" "}
+            <span className="font-mono font-semibold tracking-[0.04em] text-ink">{gstin}</span>
+          </span>
+        ) : null}
+      </div>
+
       <ul className="divide-y divide-line">
         {draft.items.map((item) => (
           <li key={item.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">

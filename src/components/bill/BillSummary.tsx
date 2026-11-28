@@ -8,6 +8,8 @@ import { Segmented } from "@/components/ui/Segmented";
 import { Button } from "@/components/ui/Button";
 import type { DiscountType } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { formatDate, localDayKey } from "@/lib/format";
+import { billTimestamp } from "@/lib/gst";
 
 export function BillSummary({
   onReview,
@@ -23,6 +25,7 @@ export function BillSummary({
     settings,
     setDraftDiscount,
     setDraftCustomer,
+    setDraftBillDate,
   } = useApp();
   const symbol = settings.currencySymbol;
   const [discountText, setDiscountText] = useState(
@@ -37,6 +40,11 @@ export function BillSummary({
   }, [draft.discountValue, discountFocused]);
 
   const itemCount = draft.items.length;
+  const todayKey = localDayKey(new Date());
+  const billDateValue = draft.billDate || todayKey;
+  // Mirrors exactly what will be printed on the invoice.
+  const printedDate = formatDate(billTimestamp(draft.billDate));
+  const backDated = Boolean(draft.billDate) && draft.billDate !== todayKey;
   const issues = draftValidation.issues;
   const uniqueIssues = [...new Set(issues.map((issue) => issue.message))].slice(0, 2);
 
@@ -127,6 +135,29 @@ export function BillSummary({
             className="vb-input h-10"
             autoComplete="off"
           />
+        </div>
+
+        <div>
+          <label htmlFor="bill-date" className="vb-label">
+            Bill date
+          </label>
+          <input
+            id="bill-date"
+            type="date"
+            value={billDateValue}
+            max={todayKey}
+            onChange={(event) => setDraftBillDate(event.target.value)}
+            className="vb-input h-10 tabular-nums"
+          />
+          <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+            {backDated ? (
+              <span className="font-medium text-amber">
+                Back-dated — the printed invoice will say {printedDate}.
+              </span>
+            ) : (
+              <>Prints on the receipt as {printedDate}.</>
+            )}
+          </p>
         </div>
       </div>
 

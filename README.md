@@ -16,11 +16,12 @@ runs in the browser: no account, no server, no API key, and no voice recording e
   Search by product or alias, edit prices, delete, and load or remove the clearly-labelled sample catalogue.
 - **Bill History** — search by bill number, customer or item, All / Today / 7 days / custom date filters, totals per
   day, receipt preview, reprint, and delete with confirmation.
-- **Settings** — shop name/address/phone (snapshotted onto each bill), currency symbol, default receipt width,
-  recognition language, thank-you message, auto-add behaviour, JSON export/import backup, sample management and a
-  full data reset.
+- **Settings** — shop name/address/phone and GST number (all snapshotted onto each bill), currency symbol, default
+  receipt width, recognition language, thank-you message, auto-add behaviour, JSON export/import backup, sample
+  management and a full data reset.
 - **Receipts** — a real receipt for 58 mm, 80 mm thermal paper and A4 (A4 uses a full invoice layout), with bill
-  number, date/time, items, quantity, unit price, line totals, subtotal, discount, final amount and thank-you message.
+  number, invoice date/time, the shop's GSTIN, items, quantity, unit price, line totals, subtotal, discount, final
+  amount and thank-you message.
   Printing uses the browser print dialog; “Save as PDF” is the same dialog with the PDF destination, so there is no
   fake PDF button.
 
@@ -103,6 +104,20 @@ npm run verify     # all of the above, in order
 - Recognition runs through the browser vendor's service and may need an internet connection. Audio is not uploaded,
   stored or sent anywhere by VoiceBill itself.
 
+## Bill date and GST number
+
+- **Bill date** — every bill carries the invoice date it was made. The date field on the New Bill screen shows what
+  will be printed and defaults to today; changing it back-dates the invoice (useful when a bill is written up later).
+  The time always comes from the clock, and impossible dates are rejected rather than silently rolled over.
+- **GST number** — enter your GSTIN in Settings (or during first-time setup). It is optional, because many kirana
+  shops are not registered. It is validated as you type (15 characters, `08ABCDE1234F1Z5`), the state is shown from
+  the first two digits, and a half-typed number can never be saved.
+- **On the receipt** — the GSTIN and invoice date print on 58 mm, 80 mm and A4 layouts, and both appear in the review
+  dialog before saving. The GSTIN is frozen into the bill like the rest of the shop details, so reprinting an old
+  bill shows the number that was valid at the time, and a bill only prints a GSTIN when it is complete and valid.
+- **Tax** — VoiceBill does not compute GST: rates come from the prices the shopkeeper enters. This adds the supplier
+  details a GST invoice needs, not a tax engine.
+
 ## Printing
 
 | Paper | Screen preview | Print setup |
@@ -131,7 +146,7 @@ src/components/     app shell, receipt, bill and product components, UI primitiv
 src/hooks/          speech recognition wrapper
 src/lib/            parser, matching, resolution, billing, storage, backup, formatting, sample data
 src/store/          AppProvider (state, validation, persistence, backups)
-tests/              88 unit and component tests
+tests/              unit and component tests
 ```
 
 ## Testing
@@ -139,16 +154,19 @@ tests/              88 unit and component tests
 The suite covers product CRUD and validation, alias/Hindi/Hinglish/English parsing, multi-product sentences, unit
 conversion, decimals, unknown products, missing prices, totals, discounts, unique bill numbers, persistence and
 corrupt storage, receipt content, 58 mm/A4 layouts, `@page` rules, print isolation and title handling, Save-as-PDF
-messaging, mic denial, unsupported speech, duplicate recognition events, draft restore and backup round-trips.
+messaging, mic denial, unsupported speech, duplicate recognition events, draft restore and backup round-trips,
+GSTIN validation and printing, and back-dated bills.
 
 ```bash
-npm run verify   # typecheck + lint + 88 tests + production build
+npm run verify   # typecheck + lint + 225 tests + production build
 ```
 
 ## Known limitations
 
 - Voice accuracy is bounded by the browser's speech engine, especially for mixed Hindi/English sentences.
-- Everything is single-device: no staff accounts, multi-device sync, GST invoices or inventory counts.
+- Everything is single-device: no staff accounts, multi-device sync or inventory counts.
+- GST support is supplier details only (GSTIN + invoice date). Line-level HSN/SAC codes, tax rates and CGST/SGST
+  splits are not calculated; add them to the price if you need a fully tax-compliant invoice.
 - A4 printing renders the invoice at the top of the sheet rather than stretching it over the full page.
 - The browser print dialog controls the final paper size; PDF output is produced by the browser, not the app.
 - Amounts use Indian digit grouping and the configured currency symbol; there is no multi-currency conversion.

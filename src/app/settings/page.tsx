@@ -27,6 +27,7 @@ import { useApp } from "@/store/AppProvider";
 import { isSpeechSupported } from "@/lib/speech";
 import { serializeBackup, backupFilename, downloadTextFile, parseBackup } from "@/lib/backup";
 import { formatDateTime } from "@/lib/format";
+import { gstinStateName, isValidGstin, normalizeGstin } from "@/lib/gst";
 import type { RecognitionLanguage, ReceiptWidth } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -120,6 +121,7 @@ export default function SettingsPage() {
     shopName: settings.shopName,
     address: settings.address,
     phone: settings.phone,
+    gstin: settings.gstin,
   });
   const [pendingImport, setPendingImport] = useState<ReturnType<typeof parseBackup> | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -131,15 +133,25 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    setShop({ shopName: settings.shopName, address: settings.address, phone: settings.phone });
-  }, [settings.shopName, settings.address, settings.phone]);
+    setShop({
+      shopName: settings.shopName,
+      address: settings.address,
+      phone: settings.phone,
+      gstin: settings.gstin,
+    });
+  }, [settings.shopName, settings.address, settings.phone, settings.gstin]);
 
   const sampleCount = products.filter((product) => product.isSample).length;
   const dirty =
     shop.shopName !== settings.shopName ||
     shop.address !== settings.address ||
-    shop.phone !== settings.phone;
+    shop.phone !== settings.phone ||
+    normalizeGstin(shop.gstin) !== normalizeGstin(settings.gstin);
   const shopNameValid = shop.shopName.trim().length > 0;
+  // GSTIN is optional: empty is fine, but a half-typed number is not saved.
+  const gstinValue = normalizeGstin(shop.gstin);
+  const gstinValid = gstinValue.length === 0 || isValidGstin(gstinValue);
+  const gstinState = gstinValid && gstinValue ? gstinStateName(gstinValue) : null;
 
   const storageEstimate = useMemo(() => {
     try {
@@ -157,12 +169,25 @@ export default function SettingsPage() {
       notify({ tone: "warning", message: "Enter your shop name before saving." });
       return;
     }
+    if (!gstinValid) {
+      notify({
+        tone: "warning",
+        message: "That GST number is not complete. Check it, or leave it empty if you are not registered.",
+      });
+      return;
+    }
     updateSettings({
       shopName: shop.shopName.trim(),
       address: shop.address.trim(),
       phone: shop.phone.trim(),
+      gstin: gstinValue,
     });
-    notify({ tone: "success", message: "Shop details saved. New receipts will use them." });
+    notify({
+      tone: "success",
+      message: gstinValue
+        ? "Shop details saved. Your GST number and the bill date will print on every new bill."
+        : "Shop details saved. New receipts will use them.",
+    });
   };
 
   const handleExport = () => {
@@ -251,6 +276,30 @@ export default function SettingsPage() {
                 inputMode="tel"
                 maxLength={40}
                 placeholder="98765 43210"
+              />
+              <TextField
+                label="GST number (GSTIN)"
+                optional
+                value={shop.gstin}
+                onChange={(event) =>
+                  setShop((current) => ({ ...current, gstin: normalizeGstin(event.target.value) }))
+                }
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={15}
+                placeholder="08ABCDE1234F1Z5"
+                containerClassName="font-mono tracking-[0.06em]"
+                hint={
+                  gstinValue
+                    ? gstinValid
+                      ? gstinState
+                        ? `Valid GSTIN · ${gstinState}`
+                        : "Valid GSTIN"
+                      : `${gstinValue.length}/15 characters — a GSTIN looks like 08ABCDE1234F1Z5`
+                    : "Printed with the bill date on every invoice. Leave empty if you are not GST registered."
+                }
+                error={!gstinValid ? "Enter all 15 characters of your GSTIN, or clear the field." : undefined}
               />
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <p className="text-[11.5px] text-ink-faint">

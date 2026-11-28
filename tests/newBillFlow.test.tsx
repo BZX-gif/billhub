@@ -99,7 +99,7 @@ describe("new bill workspace", () => {
     const flourQty = screen.getByLabelText("Quantity of Wheat Flour (Aata)") as HTMLInputElement;
     expect(flourQty.value).toBe("2");
     expect(screen.getAllByText("₹215.00").length).toBeGreaterThan(0);
-    expect(storedDraft().items).toHaveLength(2);
+    await waitFor(() => expect(storedDraft().items).toHaveLength(2));
   });
 
   it("does not add the same recognition result twice", async () => {
@@ -289,7 +289,7 @@ describe("continuous voice list", () => {
     const qty = (await screen.findByLabelText("Quantity of Sugar", {}, { timeout: 3000 })) as HTMLInputElement;
     expect(qty.value).toBe("3");
     expect((screen.getByLabelText("Quantity of Wheat Flour (Aata)") as HTMLInputElement).value).toBe("2");
-    expect(storedDraft().items).toHaveLength(2);
+    await waitFor(() => expect(storedDraft().items).toHaveLength(2));
     // The microphone is still open for the rest of the list.
     expect(screen.getByRole("button", { name: /save this list/i })).toBeInTheDocument();
     expect(recognition.started).toBe(true);
@@ -343,10 +343,12 @@ describe("continuous voice list", () => {
     expect(storedDraft().items).toHaveLength(1);
 
     // "clear" drops only the pending words, never the bill.
+    await waitFor(() => expect(storedDraft().items).toHaveLength(1));
     act(() => {
       recognition.onresult?.(speechResultEvent("clear"));
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
+    // The unresolved line is still there afterwards.
     expect(storedDraft().items).toHaveLength(1);
     expect((screen.getByLabelText(/your words|or type your bill/i) as HTMLTextAreaElement).value).toBe("");
   });
