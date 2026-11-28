@@ -21,6 +21,7 @@ import {
 } from "@/lib/billing";
 import { createId } from "@/lib/ids";
 import { validateProductInput, productFromInput, type ProductFormValues } from "@/lib/products";
+import { normalizeBillDate, normalizeGstin } from "@/lib/gst";
 import { applyProductToItem, markItemAsCustom, syncItemWithProduct } from "@/lib/resolve";
 import { createSampleProducts } from "@/lib/sampleData";
 import {
@@ -84,6 +85,7 @@ export interface AppContextValue {
     shopName: string;
     address: string;
     phone: string;
+    gstin?: string;
     language?: Settings["language"];
     receiptWidth?: Settings["receiptWidth"];
     includeSamples: boolean;
@@ -98,6 +100,7 @@ export interface AppContextValue {
   addProductToDraft: (productId: string, quantity?: number) => void;
   setDraftDiscount: (type: DiscountType, value: number) => void;
   setDraftCustomer: (name: string) => void;
+  setDraftBillDate: (date: string) => void;
   clearDraft: () => void;
 
   finalizeBill: () => { ok: true; bill: Bill } | { ok: false; error: string };
@@ -262,6 +265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         shopName: input.shopName.trim() || DEFAULT_SETTINGS.shopName,
         address: input.address.trim(),
         phone: input.phone.trim(),
+        gstin: normalizeGstin(input.gstin ?? prev.settings.gstin),
         language: input.language ?? prev.settings.language,
         receiptWidth: input.receiptWidth ?? prev.settings.receiptWidth,
         setupComplete: true,
@@ -407,6 +411,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setDraftBillDate = useCallback((billDate: string) => {
+    setData((prev) => ({
+      ...prev,
+      draft: {
+        ...prev.draft,
+        billDate: normalizeBillDate(billDate) ?? "",
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+  }, []);
+
   const clearDraft = useCallback(() => {
     setData((prev) => ({ ...prev, draft: emptyDraft() }));
   }, []);
@@ -484,6 +499,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removeSampleProducts,
       updateSettings,
       completeSetup,
+      setDraftBillDate,
       addDraftItems,
       updateDraftItem,
       removeDraftItem,
@@ -514,6 +530,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removeSampleProducts,
       updateSettings,
       completeSetup,
+      setDraftBillDate,
       addDraftItems,
       updateDraftItem,
       removeDraftItem,

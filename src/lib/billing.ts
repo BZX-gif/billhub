@@ -9,6 +9,7 @@ import type {
   Settings,
 } from "./types";
 import { clampQuantity, fromPaise, isUnit, roundMoney, toPaise } from "./units";
+import { billTimestamp, normalizeGstin } from "./gst";
 
 export interface BillTotals {
   subtotal: number;
@@ -178,11 +179,13 @@ export function createBill({ draft, products, settings, sequence, now = new Date
 
   const items = toBillItems(draft.items);
   const totals = computeTotals(items, draft.discountType, draft.discountValue);
+  // The invoice date the shopkeeper chose (defaults to the moment of saving).
+  const invoiceAt = billTimestamp(draft.billDate, now);
 
   return {
     id: createId("bill"),
     number: formatBillNumber(sequence),
-    createdAt: now.toISOString(),
+    createdAt: invoiceAt.toISOString(),
     items,
     subtotal: totals.subtotal,
     discountType: draft.discountType,
@@ -190,11 +193,14 @@ export function createBill({ draft, products, settings, sequence, now = new Date
     discountAmount: totals.discountAmount,
     total: totals.total,
     customerName: draft.customerName.trim() || undefined,
+    // The GSTIN is frozen into the bill like the rest of the shop details, so
+    // a reprint always shows the number that was valid when it was billed.
     shop: {
       shopName: settings.shopName.trim() || "My Shop",
       address: settings.address.trim(),
       phone: settings.phone.trim(),
       currencySymbol: settings.currencySymbol || "₹",
+      gstin: normalizeGstin(settings.gstin ?? "") || undefined,
     },
     thankYouMessage: settings.thankYouMessage.trim() || "Thank you! Visit again.",
     itemCount: items.length,

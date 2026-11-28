@@ -10,6 +10,7 @@ import { Segmented } from "@/components/ui/Segmented";
 import { BrandLockup } from "@/components/Logo";
 import { useToast } from "@/components/ui/Toast";
 import type { RecognitionLanguage, ReceiptWidth } from "@/lib/types";
+import { isValidGstin, normalizeGstin } from "@/lib/gst";
 
 export default function SetupPage() {
   const { completeSetup, settings } = useApp();
@@ -18,6 +19,7 @@ export default function SetupPage() {
   const [shopName, setShopName] = useState(settings.shopName === "My Shop" ? "" : settings.shopName);
   const [address, setAddress] = useState(settings.address);
   const [phone, setPhone] = useState(settings.phone);
+  const [gstin, setGstin] = useState(settings.gstin);
   const [language, setLanguage] = useState<RecognitionLanguage>(settings.language);
   const [receiptWidth, setReceiptWidth] = useState<ReceiptWidth>(settings.receiptWidth);
   const [includeSamples, setIncludeSamples] = useState(true);
@@ -35,6 +37,7 @@ export default function SetupPage() {
       shopName: name ?? shopName,
       address,
       phone,
+      gstin,
       language,
       receiptWidth,
       includeSamples: samples,
@@ -161,6 +164,24 @@ export default function SetupPage() {
                 inputMode="tel"
                 maxLength={40}
                 placeholder="98765 43210"
+              />
+              <TextField
+                label="GST number (GSTIN)"
+                optional
+                value={gstin}
+                onChange={(event) => setGstin(normalizeGstin(event.target.value))}
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={15}
+                placeholder="08ABCDE1234F1Z5"
+                containerClassName="font-mono tracking-[0.06em]"
+                error={
+                  gstin.length > 0 && !isValidGstin(gstin)
+                    ? "A GSTIN has 15 characters, like 08ABCDE1234F1Z5."
+                    : undefined
+                }
+                hint="Printed with the bill date. Leave empty if you are not GST registered."
               />
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

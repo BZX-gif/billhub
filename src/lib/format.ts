@@ -90,3 +90,16 @@ export function truncate(value: string, max = 80): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1).trimEnd()}…`;
 }
+
+/**
+ * Indian financial-year label for a date: 1 Apr – 31 Mar.
+ * 2026-11-28 → "2026-27", 2026-02-10 → "2025-26".
+ */
+export function financialYearLabel(input: string | Date = new Date()): string {
+  const date = typeof input === "string" ? new Date(input) : input;
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const startYear = date.getMonth() >= 3 ? year : year - 1;
+  const endYear = String((startYear + 1) % 100).padStart(2, "0");
+  return `${startYear}-${endYear}`;
+}

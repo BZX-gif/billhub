@@ -100,6 +100,8 @@ export interface ShopSnapshot {
   address: string;
   phone: string;
   currencySymbol: string;
+  /** Supplier GSTIN printed on the invoice, when the shop is registered. */
+  gstin?: string;
 }
 
 export interface Bill {
@@ -122,6 +124,8 @@ export interface Settings {
   shopName: string;
   address: string;
   phone: string;
+  /** GST registration number (GSTIN). Optional: many kirana shops are not registered. */
+  gstin: string;
   currencySymbol: string;
   receiptWidth: ReceiptWidth;
   language: RecognitionLanguage;
@@ -136,6 +140,11 @@ export interface Draft {
   discountType: DiscountType;
   discountValue: number;
   customerName: string;
+  /**
+   * Bill (invoice) date as YYYY-MM-DD. Empty means "today at save time".
+   * Lets a shopkeeper back-date a bill without changing the system clock.
+   */
+  billDate: string;
   updatedAt: string;
 }
 
@@ -150,6 +159,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shopName: "My Shop",
   address: "",
   phone: "",
+  gstin: "",
   currencySymbol: "₹",
   receiptWidth: "80mm",
   language: "hi-IN",
@@ -164,5 +174,6 @@ export const emptyDraft = (): Draft => ({
   discountType: "amount",
   discountValue: 0,
   customerName: "",
+  billDate: "",
   updatedAt: new Date().toISOString(),
 });

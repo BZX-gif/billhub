@@ -3,6 +3,7 @@ import {
   computeLineAmount,
   formatBillNumber,
 } from "./billing";
+import { normalizeBillDate } from "./gst";
 import { createId } from "./ids";
 import { emptyDraft, DEFAULT_SETTINGS } from "./types";
 import type {
@@ -122,6 +123,7 @@ export function sanitizeSettings(value: unknown): Settings {
   settings.shopName = asString(record.shopName, settings.shopName).slice(0, 80) || settings.shopName;
   settings.address = asString(record.address, settings.address).slice(0, 300);
   settings.phone = asString(record.phone, settings.phone).slice(0, 40);
+  settings.gstin = asString(record.gstin, settings.gstin).replace(/[^0-9a-zA-Z]/g, "").slice(0, 15).toUpperCase();
   settings.currencySymbol = (asString(record.currencySymbol, settings.currencySymbol) || "₹").slice(0, 4);
   const width = record.receiptWidth;
   settings.receiptWidth = width === "58mm" || width === "80mm" || width === "a4" ? width : settings.receiptWidth;
@@ -188,6 +190,7 @@ export function sanitizeDraft(value: unknown): Draft {
     discountType,
     discountValue: discountType === "percent" ? Math.min(100, discountValue) : roundMoney(discountValue),
     customerName: asString(record.customerName).slice(0, 80),
+    billDate: normalizeBillDate(asString(record.billDate)) ?? "",
     updatedAt: asString(record.updatedAt, new Date().toISOString()),
   };
 }
@@ -243,6 +246,7 @@ export function sanitizeBill(value: unknown): Bill | null {
       address: asString(shop.address),
       phone: asString(shop.phone),
       currencySymbol: asString(shop.currencySymbol, "₹"),
+      gstin: asString(shop.gstin).replace(/[^0-9a-zA-Z]/g, "").slice(0, 15).toUpperCase() || undefined,
     },
     thankYouMessage: asString(record.thankYouMessage, "Thank you! Visit again."),
     itemCount: items.length,

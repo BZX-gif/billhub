@@ -1,4 +1,5 @@
 import { formatDate, formatTime } from "@/lib/format";
+import { INVOICE_DATE_LABEL, printableGstin } from "@/lib/gst";
 import { formatMoney, formatQuantity } from "@/lib/units";
 import type { Bill, ReceiptWidth } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -23,6 +24,9 @@ export function Receipt({
   className?: string;
 }) {
   const symbol = bill.shop.currencySymbol || "₹";
+  // Only a complete, valid GSTIN is printed, so a half-typed number can never
+  // appear on a customer's bill.
+  const gstin = printableGstin(bill.shop.gstin);
   const money = (value: number) => formatMoney(value, symbol);
   const isA4 = width === "a4";
   const paid = bill.total;
@@ -48,13 +52,18 @@ export function Receipt({
               {bill.shop.phone ? (
                 <p className="receipt-meta mt-1">Phone: {bill.shop.phone}</p>
               ) : null}
+              {gstin ? (
+                <p className="receipt-meta mt-1 font-medium">GSTIN: {gstin}</p>
+              ) : null}
             </div>
             <div className="shrink-0 text-right">
               <p className="text-[0.72em] font-semibold uppercase tracking-[0.22em] text-[#6b6457]">
                 Invoice
               </p>
               <p className="mt-1 text-[1.25em] font-semibold">{bill.number}</p>
-              <p className="receipt-meta mt-1">{formatDate(bill.createdAt)}</p>
+              <p className="receipt-meta mt-1">
+                {INVOICE_DATE_LABEL}: <span className="font-medium">{formatDate(bill.createdAt)}</span>
+              </p>
               <p className="receipt-meta">{formatTime(bill.createdAt)}</p>
             </div>
           </header>
@@ -137,6 +146,7 @@ export function Receipt({
               <p className="receipt-meta mt-0.5 whitespace-pre-line">{bill.shop.address}</p>
             ) : null}
             {bill.shop.phone ? <p className="receipt-meta">Ph: {bill.shop.phone}</p> : null}
+            {gstin ? <p className="receipt-meta font-medium">GSTIN: {gstin}</p> : null}
           </header>
 
           <div className="receipt-rule" />
@@ -147,8 +157,8 @@ export function Receipt({
               <span className="font-semibold text-[#16130e]">{bill.number}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span>Date</span>
-              <span className="text-right">
+              <span>{INVOICE_DATE_LABEL}</span>
+              <span className="text-right font-medium text-[#16130e]">
                 {formatDate(bill.createdAt)} · {formatTime(bill.createdAt)}
               </span>
             </div>
