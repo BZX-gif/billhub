@@ -70,6 +70,7 @@ export class FakeRecognition {
   interimResults = false;
   maxAlternatives = 1;
   started = false;
+  startCount = 0;
   onstart: Handler<Event> = null;
   onresult: Handler<FakeSpeechResultEvent> = null;
   onerror: Handler<{ error: string; message?: string }> = null;
@@ -81,6 +82,7 @@ export class FakeRecognition {
 
   start() {
     this.started = true;
+    this.startCount += 1;
     this.onstart?.(new Event("start"));
   }
 

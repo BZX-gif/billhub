@@ -12,7 +12,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { useSpeechRecognition, type SpeechStatus } from "@/hooks/useSpeechRecognition";
 import { parseUtterance } from "@/lib/parser";
 import { createDraftItemFromParsed } from "@/lib/resolve";
 import type { DraftItem, RecognitionLanguage } from "@/lib/types";
@@ -24,6 +24,13 @@ import { Segmented } from "@/components/ui/Segmented";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { cleanTranscript } from "@/lib/speech";
+import { NO_PRODUCT_MESSAGE } from "@/lib/speechMessages";
+import {
+  appendToList,
+  continuesPrevious,
+  isClearCommand,
+  isHesitationOnly,
+} from "@/lib/speechText";
 
 const EXAMPLES: Array<{ label: string; text: string; lang: RecognitionLanguage }> = [
   { label: "3 किलो चीनी, 2 किलो आटा", text: "3 kilo chini aur 2 kilo aata", lang: "hi-IN" },
@@ -31,9 +38,6 @@ const EXAMPLES: Array<{ label: string; text: string; lang: RecognitionLanguage }
   { label: "1.5 litre tel", text: "1.5 litre tel", lang: "hi-IN" },
   { label: "500 gram sugar", text: "500 gram sugar", lang: "en-IN" },
 ];
-
-/** Shown when the whole utterance was filler, noise or unknown speech. */
-export const NO_PRODUCT_MESSAGE = "No recognizable grocery product found. Please try again.";
 
 interface LastHeard {
   text: string;
@@ -50,6 +54,14 @@ export function VoiceCapture() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [lastHeard, setLastHeard] = useState<LastHeard | null>(null);
   const [autoAdd, setAutoAdd] = useState(settings.autoAddVoice);
+  /**
+   * The running spoken list. Consecutive speech chunks accumulate here so a
+   * shopkeeper who pauses mid-list can simply carry on — "…3 kilo chini",
+   * pause, "aur 2 kilo aata" lands as one sentence, not two guesses.
+   */
+  const [sessionLine, setSessionLine] = useState<string | null>(null);
+  /** A commit is queued: wait for the rest of the pause before parsing. */
+  const [settling, setSettling] = useState(false);
 
   const productsRef = useRef(products);
   productsRef.current = products;
@@ -65,6 +77,9 @@ export function VoiceCapture() {
   notifyUndoRef.current = notifyUndo;
   const lastCommitRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
   const processingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionLineRef = useRef<string | null>(null);
+  sessionLineRef.current = sessionLine;
+  const statusRef = useRef<SpeechStatus>("idle");
 
   useEffect(() => {
     setLanguage(settings.language);
@@ -80,6 +95,20 @@ export function VoiceCapture() {
     };
   }, []);
 
+  /** Drop the pending buffer without touching the bill. */
+  const resetSessionLine = useCallback(() => {
+    sessionLineRef.current = null;
+    setSessionLine(null);
+  }, []);
+
+  const handleClear = useCallback(() => {
+    resetSessionLine();
+    setTranscript("");
+    setLocalError(null);
+    notifyRef.current({ tone: "success", message: "Cleared what I was holding. Your bill is unchanged." });
+  }, [resetSessionLine]);
+
+
   const commitText = useCallback((rawText: string) => {
     const text = cleanTranscript(rawText);
     if (!text) return;
@@ -92,6 +121,14 @@ export function VoiceCapture() {
       return;
     }
     lastCommitRef.current = { text: text.toLowerCase(), at: now };
+
+    // "clear" / "naya bill" resets only the pending words, never the bill.
+    if (isClearCommand(text)) {
+      resetSessionLine();
+      setTranscript("");
+      notifyRef.current({ tone: "success", message: "Cleared what I was holding. Your bill is unchanged." });
+      return;
+    }
 
     const parsed = parseUtterance(text, productsRef.current);
     if (parsed.items.length === 0) {
@@ -108,6 +145,7 @@ export function VoiceCapture() {
     );
     addDraftItemsRef.current(draftItems);
     setTranscript("");
+    resetSessionLine();
 
     const reviewCount = draftItems.filter((item) => item.needsReview).length;
     setLastHeard({ text, itemIds: draftItems.map((item) => item.id) });
@@ -129,37 +167,151 @@ export function VoiceCapture() {
         duration: 5000,
       });
     }
-  }, []);
+  }, [resetSessionLine]);
 
-  const handleFinal = useCallback(
-    (text: string) => {
-      const cleaned = cleanTranscript(text);
+  /** Wait this long after the last heard words before parsing the list. */
+  const SETTLE_MS = 1000;
+
+  /** (Re)arm the single pending commit for the running list. */
+  const armCommit = useCallback(
+    (line: string) => {
+      if (processingTimer.current) clearTimeout(processingTimer.current);
+      setProcessing(true);
+      setSettling(true);
+      processingTimer.current = setTimeout(() => {
+        setSettling(false);
+        setProcessing(false);
+        commitText(line);
+      }, SETTLE_MS);
+    },
+    [commitText],
+  );
+
+  /** Finalise the running list, whether or not it contained a product. */
+  const finishList = useCallback(
+    (line: string) => {
+      setSettling(false);
+      setProcessing(false);
+      sessionLineRef.current = null;
+      setSessionLine(null);
+      if (autoAddRef.current && line.trim()) commitText(line);
+    },
+    [commitText],
+  );
+
+  /**
+   * Append one heard chunk to the running list.
+   *
+   * The settle timer is the "did they stop talking?" signal: every chunk and
+   * every interim word re-arms it, so a list spoken with pauses is parsed as
+   * one sentence instead of being cut into fragments and guessed twice.
+   */
+  const queueChunk = useCallback(
+    (chunk: string) => {
+      const cleaned = cleanTranscript(chunk);
       if (!cleaned) return;
       setLocalError(null);
       setLastHeard(null);
-      if (!autoAddRef.current) {
-        setTranscript((current) => (current ? `${current} ${cleaned}` : cleaned));
+
+      // A hum, cough or "uh" is not a list: keep listening. If the shopkeeper
+      // only hummed, the list ends quietly on "Done" (or once they speak).
+      if (isHesitationOnly(cleaned)) {
+        if (sessionLineRef.current) armCommit(sessionLineRef.current);
         return;
       }
-      setProcessing(true);
-      if (processingTimer.current) clearTimeout(processingTimer.current);
-      processingTimer.current = setTimeout(() => {
-        commitText(cleaned);
+
+      const previous = sessionLineRef.current;
+      if (!previous && isClearCommand(cleaned)) {
+        handleClear();
+        return;
+      }
+
+      const continuing = Boolean(previous && continuesPrevious(previous, cleaned));
+      const merged = previous ? appendToList([previous], cleaned)[0]! : cleaned;
+      sessionLineRef.current = merged;
+      setSessionLine(merged);
+      setTranscript(merged);
+
+      if (!autoAddRef.current) {
+        // Manual mode: nothing is parsed until "Add to bill" is pressed.
+        setSettling(false);
         setProcessing(false);
-      }, 280);
+        return;
+      }
+
+      armCommit(merged);
+      if (continuing) {
+        notifyRef.current({
+          tone: "info",
+          message: "Picked up where you paused — adding the rest of the list.",
+          duration: 2400,
+        });
+      }
     },
-    [commitText],
+    [armCommit, handleClear],
+  );
+
+  const handleFinal = useCallback(
+    (text: string) => {
+      queueChunk(text);
+    },
+    [queueChunk],
+  );
+
+  const handleStatusChange = useCallback(
+    (next: SpeechStatus) => {
+      statusRef.current = next;
+      // Microphone off: whatever is pending is final — commit it now so a
+      // half-finished list is never lost.
+      if (next !== "idle") return;
+      const pending = sessionLineRef.current;
+      if (!pending) return;
+      if (processingTimer.current) clearTimeout(processingTimer.current);
+      processingTimer.current = null;
+      finishList(pending);
+    },
+    [finishList],
   );
 
   const handleSpeechError = useCallback((message: string) => {
     setLocalError(message);
   }, []);
 
-  const { supported, listening, interim, error, toggle, stop, clearError } = useSpeechRecognition({
+  const {
+    supported,
+    status,
+    listening,
+    interim,
+    error,
+    notice,
+    restarts,
+    toggle,
+    stop,
+    clearError,
+  } = useSpeechRecognition({
     language,
     onFinalTranscript: handleFinal,
     onError: handleSpeechError,
+    onStatusChange: handleStatusChange,
+    keepAlive: true,
   });
+
+  statusRef.current = status;
+  const sessionLive = status === "listening" || status === "connecting" || status === "recovering";
+
+  // Interim words are a "still talking" signal: keep the list open so a pause
+  // between two items does not split them into separate, guessed batches.
+  useEffect(() => {
+    if (!interim || !autoAdd) return;
+    const pending = sessionLineRef.current;
+    if (!pending) return;
+    if (processingTimer.current) clearTimeout(processingTimer.current);
+    processingTimer.current = setTimeout(() => {
+      const line = sessionLineRef.current;
+      if (!line) return;
+      finishList(line);
+    }, SETTLE_MS);
+  }, [interim, autoAdd, finishList]);
 
   const preview = useMemo(() => {
     const text = cleanTranscript(transcript);
@@ -179,6 +331,17 @@ export function VoiceCapture() {
     if (!transcript.trim()) return;
     commitText(transcript);
   };
+
+  /**
+   * "Done" — stop listening but never lose the list. Whatever is pending is
+   * parsed immediately; noise-only input produces no line at all.
+   */
+  const handleDone = useCallback(() => {
+    if (processingTimer.current) clearTimeout(processingTimer.current);
+    processingTimer.current = null;
+    finishList(sessionLineRef.current ?? "");
+    stop();
+  }, [finishList, stop]);
 
   const handleLanguage = (next: RecognitionLanguage) => {
     setLanguage(next);
@@ -255,6 +418,13 @@ export function VoiceCapture() {
       </div>
 
       <div className="px-4 pb-5 pt-6 sm:px-6 sm:pb-6">
+        <p className="mb-4 flex items-start gap-1.5 rounded-xl border border-line bg-surface-soft/60 px-3 py-2 text-left text-[11.5px] leading-relaxed text-ink-faint">
+          <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Hums, “huh”, “umm” and shop chatter are ignored — only grocery items are added. Pause as long as you
+            like; the mic stays open until you tap <span className="font-semibold text-ink-soft">Done</span>.
+          </span>
+        </p>
         <div className="flex flex-col items-center text-center">
           <div className="relative flex h-[128px] w-[128px] items-center justify-center sm:h-[140px] sm:w-[140px]">
             {listening ? (
@@ -317,9 +487,28 @@ export function VoiceCapture() {
                       />
                     ))}
                   </span>
-                  <span className="text-[14px] font-semibold">Listening…</span>
+                  <span className="text-[14px] font-semibold">Listening — the mic stays open</span>
                 </div>
-                <p className="text-[12.5px] text-ink-faint">Speak the items, then tap stop. Tap again to add more.</p>
+                <p className="text-[12.5px] text-ink-faint">
+                  Speak the list, pause to think, then carry on. Everything except groceries is ignored.
+                </p>
+              </div>
+            ) : sessionLive ? (
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="flex items-center gap-2 text-amber">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-amber" aria-hidden="true" />
+                  <span className="text-[14px] font-semibold">
+                    {status === "recovering" ? "Reconnecting…" : "Still listening — one moment"}
+                  </span>
+                </div>
+                <p className="text-[12.5px] text-ink-faint">
+                  Keep talking; your words are kept and added when the mic is back.
+                </p>
+              </div>
+            ) : settling ? (
+              <div className="flex items-center justify-center gap-2 text-[13.5px] font-medium text-ink-soft">
+                <Sparkles className="h-4 w-4 animate-pulse text-brand" aria-hidden="true" />
+                Wait — reading your list…
               </div>
             ) : processing ? (
               <div className="flex items-center justify-center gap-2 text-[13.5px] font-medium text-ink-soft">
@@ -347,18 +536,28 @@ export function VoiceCapture() {
             </div>
           ) : null}
 
-          {listening ? (
+          {listening || sessionLive ? (
             <Button
               variant="secondary"
               size="sm"
               className="mt-3"
-              onClick={stop}
+              onClick={handleDone}
               leadingIcon={<CircleStop className="h-4 w-4" aria-hidden="true" />}
             >
-              Stop listening
+              Done — save this list
             </Button>
           ) : null}
         </div>
+
+        {notice && !activeError ? (
+          <div
+            role="status"
+            className="mt-4 flex items-start gap-2.5 rounded-xl border border-brand/20 bg-brand-tint px-3 py-2.5 text-left text-[12.5px] leading-relaxed text-brand-strong"
+          >
+            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p className="flex-1">{notice}</p>
+          </div>
+        ) : null}
 
         {activeError ? (
           <div
@@ -377,6 +576,21 @@ export function VoiceCapture() {
             >
               Dismiss
             </button>
+          </div>
+        ) : null}
+
+        {sessionLine && sessionLive && settling ? (
+          <div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint px-3 py-2.5 text-left">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-1.5 w-1.5 animate-pulse rounded-full bg-brand" aria-hidden="true" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-strong">
+                Your list so far
+              </p>
+              <p className="truncate text-[11.5px] text-ink-faint">
+                {restarts > 0 ? "resumed after a pause" : "say “clear” to start this list again"}
+              </p>
+            </div>
+            <p className="mt-1 text-[13px] leading-snug text-ink">{sessionLine}</p>
           </div>
         ) : null}
 

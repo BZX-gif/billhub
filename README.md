@@ -64,12 +64,20 @@ npm run verify     # all of the above, in order
 
 ## How voice billing works
 
-1. **Recognition** — `useSpeechRecognition` wraps `SpeechRecognition` / `webkitSpeechRecognition`, keeps only final
-   results, ignores interim repeats, de-duplicates the same final transcript within a few seconds and restarts the
-   session after a silence timeout while the shopkeeper is still in listening mode.
+1. **Recognition** — `useSpeechRecognition` wraps `SpeechRecognition` / `webkitSpeechRecognition` as one *always-on
+   session*. Silence, `no-speech`, network blips and browser-side stops no longer end it: the hook reconnects
+   itself (180 ms after a pause, backing off 0.7 s → 4 s for real trouble), so a shopkeeper who stops to think and
+   then carries on never loses the mic. Only unrecoverable errors (microphone blocked/absent, unsupported language)
+   stop the session, and those show a clear message. Only final results reach the app — interim words are used
+   solely to know that someone is still talking. Duplicate finals, including the tail a restarted session re-hears
+   ("…2 kilo aata" → "aata"), are dropped. Pauses are ignored rather than turned into errors.
 2. **Parsing** — `src/lib/parser.ts` splits a sentence on “aur / and / ,”, extracts spoken numbers (including “dedh”,
    “dhai”, “sava”), units and Hindi/English number words, strips filler and interjections, and merges duplicate
-   mentions. Interjections alone (“uh hmm”) are ignored rather than becoming phantom products.
+   mentions. Hums and interjections (“huh”, “hmm”, “uh”) never become phantom products: they keep the mic open and
+   nothing is added until a real product is spoken. Consecutive chunks are stitched into one running list
+   (`src/lib/speechText.ts`), so “3 kilo chini” … pause … “aur 2 kilo aata” is parsed as one sentence instead of two
+   guesses. A settle timer (~1 s after the last heard word) decides when the list is finished, and pressing
+   “Done — save this list” commits it immediately. Saying “clear” resets only the pending words, never the bill.
 3. **Matching** — `src/lib/matching.ts` scores the query against product names and aliases with normalisation
    (Devanagari, common Hinglish spellings, plurals). A match must clear a decisive margin; close calls become
    “Confirm” lines and unknown words become “No match” lines. A literal name or registered alias is always accepted
