@@ -133,14 +133,12 @@ describe("new bill workspace", () => {
       speech.instances[0]!.onresult?.(speechResultEvent("huu"));
     });
 
-    expect(
-      await screen.findByText("No recognizable grocery product found. Please try again.", {}, { timeout: 3000 }),
-    ).toBeInTheDocument();
+    // A hum is not an error and not a product: the mic just stays open.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(screen.queryByLabelText(/^Quantity of /)).toBeNull();
     expect(storedDraft().items).toHaveLength(0);
-    // The words are kept so the shopkeeper can correct them, never discarded silently.
-    const textarea = screen.getByLabelText(/your words/i) as HTMLTextAreaElement;
-    expect(textarea.value).toBe("huu");
+    expect(screen.queryByText("No recognizable grocery product found. Please try again.")).toBeNull();
+    expect(screen.getByRole("button", { name: /save this list/i })).toBeInTheDocument();
   });
 
   it("does not create a product from a measured filler word", async () => {
@@ -253,5 +251,103 @@ describe("draft persistence", () => {
     ).toBeInTheDocument();
     const qty = (await screen.findByLabelText("Quantity of Sugar")) as HTMLInputElement;
     expect(qty.value).toBe("3");
+  });
+});
+
+describe("continuous voice list", () => {
+  beforeEach(() => {
+    resetBrowserState();
+    seedStorage();
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetBrowserState();
+    removeFakeSpeech();
+    vi.restoreAllMocks();
+  });
+
+  async function startSpeaking() {
+    const speech = installFakeSpeech();
+    render(withProviders(<NewBillPage />));
+    await waitFor(() => expect(screen.getByText("Quick add")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /start voice input/i }));
+    return speech.instances[0]!;
+  }
+
+  it("keeps listening after a pause and adds the list once it settles", async () => {
+    const recognition = await startSpeaking();
+
+    act(() => {
+      recognition.onresult?.(speechResultEvent("3 kilo chini"));
+    });
+    act(() => {
+      recognition.onresult?.(speechResultEvent("aur 2 kilo aata"));
+    });
+
+    // Both chunks stay one sentence until the shopkeeper stops speaking.
+    const qty = (await screen.findByLabelText("Quantity of Sugar", {}, { timeout: 3000 })) as HTMLInputElement;
+    expect(qty.value).toBe("3");
+    expect((screen.getByLabelText("Quantity of Wheat Flour (Aata)") as HTMLInputElement).value).toBe("2");
+    expect(storedDraft().items).toHaveLength(2);
+    // The microphone is still open for the rest of the list.
+    expect(screen.getByRole("button", { name: /save this list/i })).toBeInTheDocument();
+    expect(recognition.started).toBe(true);
+  });
+
+  it("does not add anything when the shopkeeper only hums", async () => {
+    const recognition = await startSpeaking();
+
+    act(() => {
+      recognition.onerror?.({ error: "no-speech" });
+      recognition.onresult?.(speechResultEvent("huh"));
+      recognition.onresult?.(speechResultEvent("hmm"));
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(storedDraft().items).toHaveLength(0);
+    expect(screen.queryByText("No recognizable grocery product found. Please try again.")).toBeNull();
+  });
+
+  it("recovers from a network error and keeps the spoken list", async () => {
+    const recognition = await startSpeaking();
+
+    act(() => {
+      recognition.onresult?.(speechResultEvent("2 kilo chini"));
+      recognition.onerror?.({ error: "network" });
+      recognition.onend?.(new Event("end"));
+    });
+
+    expect(screen.queryByText(/Voice input lost its connection/i)).toBeNull();
+
+    // The engine comes back on its own; the next item still lands.
+    await waitFor(() => expect(recognition.startCount).toBeGreaterThan(1), { timeout: 3000 });
+    act(() => {
+      recognition.onstart?.(new Event("start"));
+      recognition.onresult?.(speechResultEvent("aur 1 kilo namak"));
+    });
+
+    await screen.findByLabelText("Quantity of Sugar", {}, { timeout: 3000 });
+    await screen.findByLabelText("Quantity of Tata Salt", {}, { timeout: 3000 });
+    // Storage is written after the state commit, so allow a tick for it.
+    await waitFor(() => expect(storedDraft().items).toHaveLength(2));
+  });
+
+  it("clears what was heard without touching the bill", async () => {
+    const recognition = await startSpeaking();
+
+    act(() => {
+      recognition.onresult?.(speechResultEvent("2 kilo unicorn powder"));
+    });
+    await screen.findByText("Unicorn Powder", {}, { timeout: 3000 });
+    expect(storedDraft().items).toHaveLength(1);
+
+    // "clear" drops only the pending words, never the bill.
+    act(() => {
+      recognition.onresult?.(speechResultEvent("clear"));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(storedDraft().items).toHaveLength(1);
+    expect((screen.getByLabelText(/your words|or type your bill/i) as HTMLTextAreaElement).value).toBe("");
   });
 });

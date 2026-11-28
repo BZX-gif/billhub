@@ -1,7 +1,9 @@
 /**
- * Minimal typings and feature detection for the Web Speech API.
+ * Minimal typings and feature detection for the Web Speech API, plus the
+ * error taxonomy the resilient session uses.
  * Nothing is uploaded by VoiceBill: recognition is performed by the browser.
  */
+import type { RecognitionLanguage } from "./types";
 
 export interface SpeechAlternative {
   transcript: string;
@@ -45,9 +47,14 @@ export interface SpeechRecognizer {
 
 export type SpeechRecognizerConstructor = new () => SpeechRecognizer;
 
-type SpeechWindow = Window & {
+export type SpeechWindow = Window & {
   SpeechRecognition?: SpeechRecognizerConstructor;
   webkitSpeechRecognition?: SpeechRecognizerConstructor;
+};
+
+export const SPEECH_LANGUAGES: Record<RecognitionLanguage, { label: string; native: string }> = {
+  "hi-IN": { label: "Hindi / Hinglish", native: "हिंदी" },
+  "en-IN": { label: "Indian English", native: "English" },
 };
 
 export function isSpeechSupported(): boolean {
@@ -62,6 +69,34 @@ export function getSpeechRecognizer(): SpeechRecognizerConstructor | null {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
 }
 
+/**
+ * Errors that will never fix themselves while the mic keeps running
+ * (no permission, no microphone, unsupported language). Listening must stop.
+ */
+export function isFatalSpeechError(code: string): boolean {
+  return (
+    code === "not-allowed" ||
+    code === "service-not-allowed" ||
+    code === "audio-capture" ||
+    code === "language-not-supported" ||
+    code === "bad-grammar"
+  );
+}
+
+/**
+ * Errors that are normal in a shop: silence, a cough, a dropped connection.
+ * These must never end the session or show a scary message.
+ */
+export function isTransientSpeechError(code: string): boolean {
+  return (
+    code === "no-speech" ||
+    code === "network" ||
+    code === "aborted" ||
+    code === "audio-busy" ||
+    code === "interrupted"
+  );
+}
+
 export function speechErrorMessage(code: string): string {
   switch (code) {
     case "not-allowed":
@@ -70,15 +105,15 @@ export function speechErrorMessage(code: string): string {
     case "audio-capture":
       return "No microphone was found. You can still type the items.";
     case "network":
-      return "Speech recognition needs an internet connection in this browser. You can type the items instead.";
+      return "Voice input lost its connection. It will reconnect by itself — you can also type the items.";
     case "no-speech":
-      return "I didn’t catch anything. Tap the mic and speak a little closer.";
+      return "I didn’t catch anything. Keep speaking — I’m still listening.";
     case "aborted":
       return "Listening stopped.";
     case "language-not-supported":
       return "This browser does not support the selected language. Try the other language or type the items.";
     default:
-      return "Speech recognition failed. You can type the items instead.";
+      return "Speech recognition hiccupped. Still listening — please repeat that item.";
   }
 }
 
