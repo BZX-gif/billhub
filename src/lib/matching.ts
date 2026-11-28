@@ -1,5 +1,6 @@
 import type { MatchStatus, Product } from "./types";
 import { ALIAS_GROUPS } from "./vocabulary";
+import { isFillerWord, isNonWordNoise } from "./noise";
 import {
   diceCoefficient,
   levenshteinRatio,
@@ -23,6 +24,19 @@ const MATCH_THRESHOLD = 0.76;
 const AMBIGUOUS_THRESHOLD = 0.58;
 /** Two candidates this close must be confirmed by the shopkeeper. */
 const DECISIVE_GAP = 0.06;
+
+/**
+ * Lowest score that may be shown as a candidate at all. Anything weaker is
+ * treated as "not the product" — never as a weak match.
+ */
+export const MIN_CANDIDATE_SCORE = AMBIGUOUS_THRESHOLD;
+
+/**
+ * A one-word query may only be accepted when it clears this bar. Short words
+ * share too many letters ("huu"/"dal"), so fuzzy single words need real
+ * evidence — exact names and approved aliases sit far above it.
+ */
+const SINGLE_TOKEN_FUZZY_FLOOR = 0.8;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -169,26 +183,42 @@ function scoreAgainstTarget(query: string, target: string): number {
  * words ("chini" → "sugar") are slightly discounted so literal matches win.
  */
 export function scoreProduct(query: string, product: Product): number {
+  return evaluateProduct(query, product).score;
+}
+
+interface ProductEvaluation extends ProductScore {
+  /** The query hit a product name or alias literally (no fuzzy guessing). */
+  exact: boolean;
+}
+
+/**
+ * Full evaluation for one product: best score plus whether the hit was a
+ * literal name/alias (as opposed to a fuzzy similarity).
+ */
+function evaluateProduct(query: string, product: Product): ProductEvaluation {
   const targets = productTargets(product);
-  if (targets.length === 0) return 0;
+  if (targets.length === 0) return { productId: product.id, score: 0, exact: false };
   const variants = queryVariants(query);
   let best = 0;
+  let exact = false;
   for (const variant of variants) {
     for (const target of targets) {
       const raw = scoreAgainstTarget(variant.text, target);
+      if (raw === 1) exact = true;
       const score = variant.expanded ? raw * 0.985 : raw;
       if (score > best) best = score;
     }
   }
-  return Math.round(best * 1000) / 1000;
+  return { productId: product.id, score: Math.round(best * 1000) / 1000, exact };
 }
 
 /** Rank every product against a query, best first. */
 export function rankProducts(query: string, products: Product[]): ProductScore[] {
   return products
-    .map((product) => ({ productId: product.id, score: scoreProduct(query, product) }))
+    .map((product) => evaluateProduct(query, product))
     .filter((entry) => entry.score > 0.35)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score)
+    .map(({ productId, score }) => ({ productId, score }));
 }
 
 /**
@@ -197,17 +227,43 @@ export function rankProducts(query: string, products: Product[]): ProductScore[]
  * - `matched`   — confident, safe to prefill the bill.
  * - `ambiguous` — close candidates, the shopkeeper must confirm.
  * - `unmatched` — no confident match, never guessed.
+ *
+ * Strictness rules (billing accuracy beats recognition quantity):
+ * - a literal product name / registered alias is always accepted first;
+ * - a fuzzy single word needs strong similarity *and* a clear winner;
+ * - filler words and non-word sounds ("huu", "hmm", "haan") are never
+ *   promoted to a product, however similar they look to a catalogue word.
  */
 export function matchProduct(query: string, products: Product[]): ProductMatch {
-  const ranked = rankProducts(query, products);
-  const best = ranked[0];
-  const alternatives = ranked.slice(0, 4);
+  const tokens = tokenize(normalizeText(query));
+  // Weak evidence is not a candidate: it is shown to the shopkeeper only when
+  // it clears the ambiguity floor, so a stray word cannot suggest a product.
+  const evaluated = products
+    .map((product) => evaluateProduct(query, product))
+    .filter((entry) => entry.score >= AMBIGUOUS_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
 
-  if (!best || best.score < AMBIGUOUS_THRESHOLD) {
-    return { status: "unmatched", productId: null, score: best?.score ?? 0, alternatives };
+  const best = evaluated[0];
+  const alternatives = evaluated.slice(0, 4).map(({ productId, score }) => ({ productId, score }));
+
+  if (tokens.length === 0 || !best) {
+    return { status: "unmatched", productId: null, score: 0, alternatives };
   }
 
-  const runnerUp = ranked[1]?.score ?? 0;
+  const isSingleNoiseToken =
+    tokens.length === 1 &&
+    !best.exact &&
+    (isFillerWord(tokens[0]!) || isNonWordNoise(tokens[0]!));
+
+  if (isSingleNoiseToken || best.score < AMBIGUOUS_THRESHOLD) {
+    return { status: "unmatched", productId: null, score: best.score, alternatives };
+  }
+
+  if (tokens.length === 1 && !best.exact && best.score < SINGLE_TOKEN_FUZZY_FLOOR) {
+    return { status: "unmatched", productId: null, score: best.score, alternatives };
+  }
+
+  const runnerUp = evaluated[1]?.score ?? 0;
   const decisive = best.score - runnerUp >= DECISIVE_GAP;
 
   if (best.score >= MATCH_THRESHOLD && decisive) {

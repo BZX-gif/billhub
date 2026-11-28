@@ -32,6 +32,9 @@ const EXAMPLES: Array<{ label: string; text: string; lang: RecognitionLanguage }
   { label: "500 gram sugar", text: "500 gram sugar", lang: "en-IN" },
 ];
 
+/** Shown when the whole utterance was filler, noise or unknown speech. */
+export const NO_PRODUCT_MESSAGE = "No recognizable grocery product found. Please try again.";
+
 interface LastHeard {
   text: string;
   /** Draft line ids created from this sentence, so the feedback stays in sync. */
@@ -90,12 +93,13 @@ export function VoiceCapture() {
     }
     lastCommitRef.current = { text: text.toLowerCase(), at: now };
 
-    const parsed = parseUtterance(text);
+    const parsed = parseUtterance(text, productsRef.current);
     if (parsed.items.length === 0) {
+      // Wrong words, filler or noise: keep what was said so it can be edited,
+      // but never invent a product from it.
       setTranscript(text);
-      setLocalError(
-        "I couldn’t find a product in that. Try “3 kilo chini” or “2 packet Maggi”.",
-      );
+      setLastHeard(null);
+      setLocalError(NO_PRODUCT_MESSAGE);
       return;
     }
 
@@ -160,13 +164,14 @@ export function VoiceCapture() {
   const preview = useMemo(() => {
     const text = cleanTranscript(transcript);
     if (!text) return null;
-    const parsed = parseUtterance(text);
-    if (parsed.items.length === 0) return { empty: true as const };
+    const parsed = parseUtterance(text, products);
+    if (parsed.items.length === 0) return { empty: true as const, noise: parsed.noise, ignored: parsed.ignored };
     const items = parsed.items.map((item) => createDraftItemFromParsed(item, products));
     return {
       empty: false as const,
       items,
       ignored: parsed.ignored,
+      noise: parsed.noise,
     };
   }, [transcript, products]);
 
@@ -465,7 +470,9 @@ export function VoiceCapture() {
           {preview && preview.empty ? (
             <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
               <Info className="h-3.5 w-3.5" aria-hidden="true" />
-              Add a quantity (like “2 kilo”) and a product name.
+              {preview.noise.length > 0 && preview.ignored.length === 0
+                ? "That sounded like filler words — say a product name, like “2 kilo chini”."
+                : "Add a quantity (like “2 kilo”) and a product name."}
             </p>
           ) : null}
 

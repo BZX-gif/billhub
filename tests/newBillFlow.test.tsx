@@ -123,6 +123,54 @@ describe("new bill workspace", () => {
     expect(qty.value).toBe("2");
   });
 
+  it("does not add a product when the shopkeeper only hums into the mic", async () => {
+    const speech = installFakeSpeech();
+    render(withProviders(<NewBillPage />));
+    await waitFor(() => expect(screen.getByText("Quick add")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /start voice input/i }));
+    act(() => {
+      speech.instances[0]!.onresult?.(speechResultEvent("huu"));
+    });
+
+    expect(
+      await screen.findByText("No recognizable grocery product found. Please try again.", {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Quantity of /)).toBeNull();
+    expect(storedDraft().items).toHaveLength(0);
+    // The words are kept so the shopkeeper can correct them, never discarded silently.
+    const textarea = screen.getByLabelText(/your words/i) as HTMLTextAreaElement;
+    expect(textarea.value).toBe("huu");
+  });
+
+  it("does not create a product from a measured filler word", async () => {
+    render(withProviders(<NewBillPage />));
+    await waitFor(() => expect(screen.getByText("Quick add")).toBeInTheDocument());
+
+    await addByTyping("3 kg huu");
+
+    expect(
+      await screen.findByText("No recognizable grocery product found. Please try again."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Quantity of /)).toBeNull();
+    expect(storedDraft().items).toHaveLength(0);
+  });
+
+  it("adds the product when the shopkeeper hums then says an item", async () => {
+    const speech = installFakeSpeech();
+    render(withProviders(<NewBillPage />));
+    await waitFor(() => expect(screen.getByText("Quick add")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /start voice input/i }));
+    act(() => {
+      speech.instances[0]!.onresult?.(speechResultEvent("umm 3 kg sugar"));
+    });
+
+    const qty = (await screen.findByLabelText("Quantity of Sugar", {}, { timeout: 3000 })) as HTMLInputElement;
+    expect(qty.value).toBe("3");
+    expect(storedDraft().items).toHaveLength(1);
+  });
+
   it("keeps unmatched products out of the final bill", async () => {
     render(withProviders(<NewBillPage />));
     await waitFor(() => expect(screen.getByText("Quick add")).toBeInTheDocument());

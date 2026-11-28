@@ -84,13 +84,25 @@ const FILLER_WORDS = [
   "dijiye", "chahiye", "mujhe", "please", "plz", "of", "some", "thoda", "dena",
   "hai", "hain", "और", "जोड़ो", "करो", "करदो", "चाहिए", "मुझे", "दीजिए",
   "जोड़", "प्लीज़", "है",
-  // Interjections and wake words. Only whole words are removed, so they can
-  // never damage a real product name; an utterance made only of these is
-  // ignored instead of becoming a phantom "product".
-  "uh", "uhh", "uhhh", "um", "umm", "umh", "hm", "hmm", "hmmm", "mm", "mmm",
-  "ah", "aah", "oh", "ooh", "er", "erm", "arre", "arey", "aray", "matlab",
-  "means", "ok", "okay", "okey", "hello", "helo", "hi", "namaste", "test",
-  "testing", "i", "want", "need", "give", "would", "like",
+  // Interjections, hesitations and wake words (Hindi, Hinglish and English).
+  // Only whole words are removed, and the parser keeps a word that is being
+  // used as a unit ("2 no sabun"), so a real product name is never damaged.
+  // An utterance made only of these is ignored instead of becoming a phantom
+  // "product". Devanagari spellings are listed too — normalisation
+  // transliterates them, so "अच्छा", "achha" and "accha" all collapse to one
+  // key.
+  "uh", "uhh", "uhhh", "um", "umm", "ummm", "umh", "hm", "hmm", "hmmm", "hmmmm",
+  "mm", "mmm", "ah", "aah", "oh", "ooh", "er", "erm", "huh",
+  "hu", "huu", "huuu", "ha", "haa", "haan", "han", "haanji", "hn",
+  "acha", "accha", "achha", "achcha", "aca", "ji", "jee", "yes", "yeah", "yep",
+  "no", "nope", "nah", "na", "nai", "nahi", "nhin",
+  "arre", "arey", "aray", "are", "matlab", "mtlb", "means", "ok", "okay",
+  "okey", "oke", "okei", "theek", "teek", "thik", "sahi", "bas", "bass",
+  "hello", "helo", "hi", "namaste", "test", "testing", "i", "want", "need",
+  "give", "would", "like", "kripya", "bhai", "bhaiya", "sir", "madam",
+  "हूँ", "हूं", "हू", "हम्म", "ह्म", "उम", "उम्म", "अह", "अरे", "अर्रे",
+  "अच्छा", "अचा", "हाँ", "हां", "हा", "जी", "मतलब", "ओके", "ठीक", "नहीं",
+  "ना", "हाँ जी", "अच्छा जी",
 ];
 
 export const FILLER_TOKENS: Set<string> = new Set(
